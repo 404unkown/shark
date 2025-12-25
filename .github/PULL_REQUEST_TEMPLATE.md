@@ -10,7 +10,7 @@ Remove this line and tell us how the code was tested.
 ## Checklist:
 Before you create this PR, confirm all the requirements listed below by checking the checkboxes `[x]`:
 
--   [ ] Have you checked there aren't other open [Pull Requests](https://github.com/Bhaviktutorials/shark/pulls) for the same update/change?
+-   [ ] Have you checked there aren't other open [Pull Requests](https://github.com/404unkown/shark/pulls) for the same update/change?
 -   [ ] Have you made corresponding changes to the documentation?
 -   [ ] Have you tested the code before submission?
 -   [ ] Have you formatted your code ?
