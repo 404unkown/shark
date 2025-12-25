@@ -149,11 +149,17 @@ function main_update() {
 
 
 function update() {
-	version=$(curl -L -s https://raw.githubusercontent.com/Bhaviktutorials/shark/master/shark | grep -w "VERSION=" | head -n1)
-	latest_version=$(echo ${version} | sed -e 's/[^0-9]\+[^0-9]/ /g' | cut -d '"' -f1)
-	if [ "${1}" != "-u" ] || [ "${1}" != "--update" ]; then
-		[ ${latest_version} != ${VERSION} ] && echo && msg "shark update is available !!" && sleep 2.5 && echo && msg "Run shark -u , shark --update" && echo && exit 1;	       
-        fi
+    # DISABLED AUTO-UPDATE - Local fixes will be overwritten
+    # Uncomment the lines below if you want to re-enable updates
+    
+    # version=$(curl -L -s https://raw.githubusercontent.com/Bhaviktutorials/shark/master/shark | grep -w "VERSION=" | head -n1)
+    # latest_version=$(echo ${version} | sed -e 's/[^0-9]\+[^0-9]/ /g' | cut -d '"' -f1)
+    # if [ "${1}" != "-u" ] || [ "${1}" != "--update" ]; then
+    #     [ ${latest_version} != ${VERSION} ] && echo && msg "shark update is available !!" && sleep 2.5 && echo && msg "Run shark -u , shark --update" && echo && exit 1;
+    # fi
+    
+    echo -e "${yellow}[*]${white} Auto-update is disabled to preserve local fixes"
+    echo -e "${yellow}[*]${white} To update manually, re-run the installer"
 }
 
 ###########
@@ -242,11 +248,7 @@ function fix_ngrok() {
 	launch="fixing ngrok"
 	splashdown="fixed ngrok";echo
 	if [[ ("$arch" == *'arm'*) || ("$arch" == *'Android'*) ]]; then
-
 			ngrok_url="https://github.com/E343IO/stuff/raw/main/ngrok-2in1.zip"
-
-
-
 		elif [[ "$arch" == *'aarch64'* ]]; then
 		         if [[ "$ArNam" == *'amd64'* ]]; then
                               ngrok_url="https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip"
@@ -263,30 +265,99 @@ function fix_ngrok() {
 			ngrok_url="https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-386.zip"
 	fi
 	(wget --quiet ${ngrok_url} -O ngrok.zip) & spinner
-	unzip -q ngrok.zip && rm -rf ngrok.zip && chmod +x ngrok && mv ngrok $BIN
+	if [ -f "ngrok.zip" ]; then
+		unzip -q ngrok.zip && rm -rf ngrok.zip && chmod +x ngrok && mv ngrok $BIN
+	else
+		echo -e "${red}[!]${white} Ngrok download failed"
+	fi
 }
 
 function fix_cloudflared() {
-	clear
-	cd $HOME
-	os;rm -rf ${BIN}/cloudflared && rm -rf ${logfile}.cloud.log
-	launch="fixing cloudflare.."
-	splashdown="cloudflare fixed"
-        if [[ ("$arch" == *'arm'*) || ("$arch" == *'Android'*) ]]; then
-                        cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
-                elif [[ "$arch" == *'aarch64'* ]]; then
-                        cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-                elif [[ "$arch" == *'x86_64'* ]]; then
-                        if [[ "$ArNam" == *'amd64'* ]]; then
-                                cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
-                        else
-                                cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
-                        fi
-                else
-                        cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386"
-         fi
-	 (wget --quiet ${cloudd} -O cloudflared) & spinner
-	 chmod +x cloudflared && mv cloudflared $BIN
+    clear
+    cd $HOME
+    os
+    echo -e "${green}[*]${white} Fixing Cloudflared installation..."
+    
+    # Remove old installation
+    rm -rf ${BIN}/cloudflared ${logfile}.cloud.log cloudflared cloudflared-* 2>/dev/null
+    
+    # Determine correct architecture
+    case "$arch" in
+        *"aarch64"*|*"arm64"*)
+            cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+            echo -e "${green}[*]${white} Architecture: ARM64"
+            ;;
+        *"armv7l"*|*"armv8l"*|*"arm"*)
+            cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
+            echo -e "${green}[*]${white} Architecture: ARM (32-bit)"
+            ;;
+        *"x86_64"*)
+            cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+            echo -e "${green}[*]${white} Architecture: x86_64"
+            ;;
+        *"i686"*|*"i386"*)
+            cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386"
+            echo -e "${green}[*]${white} Architecture: x86 (32-bit)"
+            ;;
+        *)
+            echo -e "${yellow}[!]${white} Unknown architecture: $arch, trying ARM64"
+            cloudd="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+            ;;
+    esac
+    
+    launch="Downloading Cloudflared"; splashdown="Download complete"; echo
+    
+    # Download with retries
+    for i in {1..3}; do
+        (wget --tries=2 --timeout=20 "$cloudd" -O cloudflared) & spinner
+        
+        if [ -f "cloudflared" ] && [ -s "cloudflared" ]; then
+            echo -e "${green}[✓]${white} Download successful"
+            break
+        else
+            echo -e "${yellow}[!]${white} Download failed, attempt $i/3"
+            sleep 2
+        fi
+    done
+    
+    if [ ! -f "cloudflared" ] || [ ! -s "cloudflared" ]; then
+        echo -e "${red}[✗]${white} Failed to download Cloudflared"
+        echo -e "${yellow}[*]${white} Try manual installation:"
+        
+        if [ ${OS} != "DEBIAN" ]; then
+            echo -e "  pkg install cloudflared"
+        else
+            echo -e "  wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+            echo -e "  chmod +x cloudflared"
+            echo -e "  sudo mv cloudflared /usr/local/bin/"
+        fi
+        return 1
+    fi
+    
+    # Make executable and install
+    chmod +x cloudflared
+    
+    if mv cloudflared ${BIN}/cloudflared; then
+        echo -e "${green}[✓]${white} Cloudflared installed to ${BIN}/"
+        
+        # Test installation
+        if ${BIN}/cloudflared --version &>/dev/null; then
+            echo -e "${green}[✓]${white} Cloudflared verified and working"
+            return 0
+        elif [ ${OS} != "DEBIAN" ] && command -v termux-chroot &>/dev/null; then
+            if termux-chroot ${BIN}/cloudflared --version &>/dev/null; then
+                echo -e "${green}[✓]${white} Cloudflared needs termux-chroot to run"
+                return 0
+            fi
+        fi
+        
+        echo -e "${yellow}[!]${white} Cloudflared installed but may have compatibility issues"
+        echo -e "${yellow}[*]${white} If you get 'server busy', use Ngrok option instead"
+        return 0
+    else
+        echo -e "${red}[✗]${white} Failed to install Cloudflared"
+        return 1
+    fi
 }
 function fix_cloudshell() {
 	os;man ${shark}/cloudshell
@@ -568,16 +639,81 @@ fi
 #fi
 }
 function main2() {
-if [[ -e ${logfile}.cloud.log ]]; then
-	rm -rf ${logfile}.cloud.log
-	touch ${logfile}.cloud.log
-fi
-if [[ `command -v termux-chroot` || "$osnam" == "Android" ]]; then
-	launch="starting shark server"; splashdown="started shark server";printf "\n"; connection;php -S "$HOST":"$PORT" > /dev/null 2>&1 & sleep 2; termux-chroot cloudflared tunnel --url "$HOST":"$PORT" --logfile ${logfile}.cloud.log > /dev/null 2>&1 & sleep 5 & spinner;
-else
-	launch="starting shark server"; splashdown="started shark server";printf "\n"; connection;php -S "$HOST":"$PORT" > /dev/null 2>&1 & sleep 2; cloudflared tunnel --url "$HOST":"$PORT" --logfile ${logfile}.cloud.log  > /dev/null 2>&1 & sleep 5 & spinner;
-fi
-link=$(grep -o 'https://[-0-9a-z]*\.trycloudflare.com' "${logfile}.cloud.log");askuri;
+    if [[ -e ${logfile}.cloud.log ]]; then
+        rm -rf ${logfile}.cloud.log
+        touch ${logfile}.cloud.log
+    fi
+    
+    # Start PHP server
+    launch="Starting PHP server"; splashdown="PHP server started"; printf "\n"
+    connection
+    php -S "$HOST":"$PORT" > /dev/null 2>&1 &
+    php_pid=$!
+    sleep 2
+    
+    # Check if PHP server is running
+    if ! kill -0 $php_pid 2>/dev/null; then
+        echo -e "${red}[✗]${white} PHP server failed to start on port $PORT"
+        echo -e "${yellow}[*]${white} Try a different port or check if port is in use"
+        kill $php_pid 2>/dev/null
+        return 1
+    fi
+    
+    # Start Cloudflared tunnel with better handling
+    launch="Starting Cloudflare tunnel"; splashdown="Tunnel started"; echo
+    
+    if [[ `command -v termux-chroot` || "$osnam" == "Android" ]]; then
+        # For Termux/Android
+        (termux-chroot cloudflared tunnel --url "$HOST":"$PORT" --logfile ${logfile}.cloud.log > /dev/null 2>&1) &
+    else
+        # For Linux/Debian
+        (cloudflared tunnel --url "$HOST":"$PORT" --logfile ${logfile}.cloud.log > /dev/null 2>&1) &
+    fi
+    
+    cloudflared_pid=$!
+    
+    # Wait longer for Cloudflared to initialize
+    sleep 10
+    
+    # Check if we got a tunnel URL
+    if [ -f "${logfile}.cloud.log" ]; then
+        link=$(grep -o 'https://[-0-9a-z]*\.trycloudflare.com' "${logfile}.cloud.log" | head -1)
+        
+        if [ -n "$link" ]; then
+            echo -e "${green}[✓]${white} Cloudflare tunnel created: $link"
+            askuri
+        else
+            echo -e "${yellow}[!]${white} Waiting for tunnel URL..."
+            # Wait a bit more
+            sleep 5
+            link=$(grep -o 'https://[-0-9a-z]*\.trycloudflare.com' "${logfile}.cloud.log" | head -1)
+            
+            if [ -n "$link" ]; then
+                echo -e "${green}[✓]${white} Cloudflare tunnel created: $link"
+                askuri
+            else
+                echo -e "${red}[✗]${white} Cloudflare tunnel failed or 'server busy'"
+                echo -e "${yellow}[*]${white} Possible reasons:"
+                echo -e "  1. Cloudflare service is busy (try again in 5-10 minutes)"
+                echo -e "  2. Too many tunnels from your IP (rate limited)"
+                echo -e "  3. Network/firewall issues"
+                echo -e ""
+                echo -e "${yellow}[*]${white} Solutions:"
+                echo -e "  1. Use Ngrok option (more reliable)"
+                echo -e "  2. Wait and try Cloudflare again later"
+                echo -e "  3. Use localhost option"
+                
+                kill $cloudflared_pid 2>/dev/null
+                kill $php_pid 2>/dev/null
+                return 1
+            fi
+        fi
+    else
+        echo -e "${red}[✗]${white} Cloudflared failed to start"
+        kill $cloudflared_pid 2>/dev/null
+        kill $php_pid 2>/dev/null
+        return 1
+    fi
 }
 function prt() {
 clear         
@@ -651,7 +787,23 @@ elif [[ $portfrd == "b" || $portfrd == "B" || $portfrd == "cloudflare" ]]; then
 	p="s"
 	if [ -e ${BIN}/cloudflared ]; then
 		echo
-		msg " cloudflare is already installed."
+		msg "Cloudflared is installed."
+		
+		# Test if it actually works
+		echo -e "${green}[*]${white} Testing Cloudflared..."
+		if ${BIN}/cloudflared --version &>/dev/null; then
+			echo -e "${green}[✓]${white} Cloudflared is working"
+		elif [ ${OS} != "DEBIAN" ] && command -v termux-chroot &>/dev/null; then
+			if termux-chroot ${BIN}/cloudflared --version &>/dev/null; then
+				echo -e "${green}[✓]${white} Cloudflared works with termux-chroot"
+			else
+				echo -e "${yellow}[!]${white} Cloudflared may have issues"
+				echo -e "${yellow}[*]${white} If you get 'server busy', try Ngrok instead"
+			fi
+		else
+			echo -e "${yellow}[!]${white} Cloudflared may have issues"
+		fi
+		
 		sleep 1
 		if [[ $valu != "19" ]]; then
 			if [[ $reddc == "TRUE" ]]; then
@@ -661,17 +813,15 @@ elif [[ $portfrd == "b" || $portfrd == "B" || $portfrd == "cloudflare" ]]; then
 				redirc
 				main
 			fi
-
 		else
 			main
 		fi
 	else
 		echo
-		error_msg " cloudflare is not installed yet!\n"
+		error_msg "Cloudflared is not installed!\n"
 		sleep 2
-		msg "Preparing fix's ...\n"
-		sleep 5
-		echo
+		msg "Installing Cloudflared...\n"
+		sleep 2
 		fix_cloudflared
 		decne
 	fi 
